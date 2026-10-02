@@ -14,3 +14,5 @@ document.querySelectorAll('a[href="#resultPanel"]').forEach(a=>a.addEventListene
 function summary(){const valid=!!current;$('appState').textContent=valid?'計算已更新 · '+$('mode').selectedOptions[0].text:'輸入待修正 · 請查看提示';$('appState').classList.toggle('invalid',!valid);$('verticalSummary').innerHTML=valid?`<span>主建築垂直係數</span><b>梁版 Kz = ±${fmt(current.z.C)}</b><span>柱牆 = ±${fmt(current.columnC)}</span><small>各乘對應自重</small>`:'';document.querySelectorAll('input[type="number"]').forEach(el=>el.setAttribute('inputmode','decimal'));}
 document.addEventListener('seismic-updated',summary);summary();
 })();
+// Help is embedded in both online and single-file offline editions.
+document.addEventListener('click',event=>{const trigger=event.target.closest('[data-guide]');if(!trigger)return;const dialog=document.getElementById('guideDialog'),frame=document.getElementById('guideFrame');dialog.showModal();const jump=()=>frame.contentDocument?.getElementById(trigger.dataset.guide)?.scrollIntoView({block:'start'});if(frame.contentDocument?.readyState==='complete')jump();else frame.addEventListener('load',jump,{once:true});});
