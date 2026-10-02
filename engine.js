@@ -6,6 +6,10 @@ function spectrum(t,s,s1,floor=true){let t0=s1/s;return t<=.2*t0?s*(.4+3*t/t0):t
 function fu(t,r,t0){let q=Math.sqrt(2*r-1);return t<=.2*t0?1+(q-1)*t/(.2*t0):t<=.6*t0?q:t<=t0?q+(r-q)*(t-.6*t0)/(.4*t0):r;}
 function modify(q,vertical=false,near=false){let a=vertical?(near?.2:.15):.3,b=vertical?(near?.53:.4):.8,c=vertical?(near?.096:.072):.144;return q<=a?q:q<b?.52*q+c:.7*q;}
 function calculate(p,faults=[]){
+if(!['general','basin','near'].includes(p.mode))throw Error('工址類型無效。');
+if(![1,2,3].includes(p.soil))throw Error('地盤類別須為 1–3。');
+if(p.mode==='basin'&&![1.6,1.3,1.05].includes(p.zone))throw Error('臺北微分區轉換週期無效。');
+for(const k of ['ctx','cty'])if(!Number.isFinite(p[k])||p[k]<=0)throw Error('經驗週期係數須為正數。');
 for(const k of ['height','I','ay','tx','ty','tv','rx','ry','rv'])if(!Number.isFinite(p[k])||p[k]<=0)throw Error('請完整輸入正數參數：'+k);
 if(p.rx<1||p.ry<1||p.rv<1)throw Error('韌性容量 R 不可小於 1。');
 if(!p.floors.length||p.floors.some((f,i)=>!Number.isFinite(f.h)||!Number.isFinite(f.w)||f.w<=0||f.h<=0||(i&&f.h<=p.floors[i-1].h)))throw Error('楼層重量須大於零，標高須由下而上遞增。');
