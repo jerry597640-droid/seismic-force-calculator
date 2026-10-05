@@ -2,6 +2,65 @@
 const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),fmt=(n,d=4)=>Number.isFinite(n)?n.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}):'—';
 let openSteps=new Set(['01']);
 let floors=[{h:4,w:500},{h:8,w:500},{h:12,w:500},{h:16,w:450}],faults=[],current=null,params=null;
+// VS30_MODEL_START — §2.5, equation (2-5a); only the surface-to-30 m profile.
+const Vs30Model = Object.freeze({
+  classify(v) {
+    if (!Number.isFinite(v) || v <= 0) throw Error('Vs30 必須是正有限數值。');
+    const atLeast = limit => v >= limit || Math.abs(v-limit) <= 8*Number.EPSILON*limit;
+    return atLeast(270) ? 1 : atLeast(180) ? 2 : 3;
+  },
+  calculate(layers) {
+    if (!layers.length) throw Error('請至少輸入一層資料。');
+    let depth=0, travel=0;
+    const rows=layers.map((r,i)=>{
+      const d=String(r.d).trim()===''?NaN:Number(r.d), vs=String(r.vs).trim()===''?NaN:Number(r.vs);
+      if (!Number.isFinite(d)||d<=0||!Number.isFinite(vs)||vs<=0) throw Error(`第 ${i+1} 層：厚度與 Vs 均須填入大於 0 的有限數值。`);
+      const top=depth, used=Math.max(0,Math.min(d,30-top)); depth+=d;
+      if (!Number.isFinite(depth)) throw Error('總厚度超出可計算範圍。');
+      const time=used/vs; travel+=time;
+      return {top,bottom:depth,d,vs,used,time,source:String(r.source||'')};
+    });
+    if (depth < 30-1e-9) throw Error(`資料僅 ${depth.toFixed(3)} m，尚缺 ${(30-depth).toFixed(3)} m；請補齊地表下 30 m，不自動外推。`);
+    const value=30/travel;
+    if (!Number.isFinite(value)||value<=0) throw Error('波速或厚度超出可計算範圍。');
+    return {value,soil:this.classify(value),depth,travel,rows};
+  }
+});
+// VS30_MODEL_END
+
+function vs30Layers(){return [...$('vsRows').children].map(row=>({d:row.querySelector('[data-vs-d]').value,vs:row.querySelector('[data-vs-v]').value,source:row.querySelector('[data-vs-source]').value}));}
+function vs30Draw(layers){
+  $('vsRows').innerHTML=layers.map((r,i)=>`<div class="vs-layer"><div class="vs-layer-title"><b>第 ${i+1} 層</b><button type="button" data-vs-remove="${i}" ${layers.length===1?'disabled':''} aria-label="移除第 ${i+1} 層">移除</button></div><div class="grid2"><label>厚度 d（m）<input data-vs-d type="number" inputmode="decimal" step="any" min="0" aria-label="第 ${i+1} 層厚度（m）" value="${esc(r.d)}" placeholder="例如 5"></label><label>剪力波速 Vs（m/s）<input data-vs-v type="number" inputmode="decimal" step="any" min="0" aria-label="第 ${i+1} 層 Vs（m/s）" value="${esc(r.vs)}" placeholder="例如 150"></label></div><label>資料來源（選填）<input data-vs-source type="text" aria-label="第 ${i+1} 層資料來源" value="${esc(r.source||'')}" placeholder="報告／孔號／頁次／試驗方法"></label><small data-vs-depth></small></div>`).join('');
+}
+function vs30Sync(){
+  const basin=$('mode').value==='basin',auto=$('soilMethod').value==='layers';
+  $('soilMethod').disabled=basin; $('soil').disabled=auto&&!basin;
+  $('vsBasinNote').hidden=!basin;
+  let result=null,error=null;
+  try {result=Vs30Model.calculate(vs30Layers());} catch(e){error=e;}
+  const names=['','第一類・堅實地盤','第二類・普通地盤','第三類・軟弱地盤'];
+  const nodes=[...$('vsRows').children];
+  nodes.forEach((node,i)=>{const r=result?.rows[i];node.querySelector('[data-vs-depth]').textContent=r?`地表下 ${fmt(r.top,3)}–${fmt(r.bottom,3)} m；採用 ${fmt(r.used,3)} m${r.used===0?'（30 m 以下，不計入）':r.used<r.d?'（跨越 30 m，截取計算）':''}`:'';});
+  $('vsResult').className='note'+(error&&auto&&!basin?' vs-error':'');
+  $('vsResult').textContent=result?`Vs30 = ${fmt(result.value,6)} m/s；${names[result.soil]}。${basin?'僅供參考，臺北盆地仍採微分區。':auto?'已自動帶入地盤分類並重算地震力。':'僅供預覽；目前仍採手動地盤分類。'}${result.depth>30?' 僅採地表下前 30 m。':''}`:error.message+(auto&&!basin?' 已暫停地震力計算。':' 尚未套用分層資料。');
+  if(auto&&!basin){if(error)throw error;$('soil').value=String(result.soil);}
+  return {auto: auto&&!basin,basin,result};
+}
+function vs30Report(state){
+  if(state.basin)return '<p>臺北盆地依 §2.7 微分區規定，不以 Vs30 三類分類取代。</p>';
+  if(!state.auto)return `<p>地盤分類：${esc($('soil').selectedOptions[0].text)}（手動選擇；未採用分層自動判定）。</p>`;
+  const r=state.result;
+  return '<p>採用地表下 0–30 m；第 '+r.soil+' 類地盤。分類使用未四捨五入值。</p>'+table(['層','深度範圍（m）','原厚度（m）','採用 d（m）','Vs（m/s）','d/Vs（s）','資料來源'],r.rows.map((x,i)=>[i+1,`${fmt(x.top,3)}–${fmt(x.bottom,3)}`,fmt(x.d,3),fmt(x.used,3),fmt(x.vs,3),fmt(x.time,8),esc(x.source||'未填')]))+`<div class="formula">Σd = 30 m；Σ(d/Vs) = ${fmt(r.travel,8)} s<br>Vs30 = 30 / Σ(d/Vs) = ${fmt(r.value,6)} m/s</div><p>依 §2.5 式 (2-5a)：≥270 為第一類；180≤Vs30&lt;270 為第二類；&lt;180 為第三類。波速採地勘實測值或由專業人員依規範確認的換算值。</p>`;
+}
+function vs30Init(){
+  vs30Draw([{d:'',vs:'',source:''}]);
+  $('vsRows').addEventListener('input',update);
+  $('vsRows').addEventListener('click',e=>{const b=e.target.closest('[data-vs-remove]');if(!b)return;const rows=vs30Layers();if(rows.length<=1)return;rows.splice(Number(b.dataset.vsRemove),1);vs30Draw(rows);update();});
+  $('vsAdd').onclick=()=>{vs30Draw([...vs30Layers(),{d:'',vs:'',source:''}]);update();$('vsRows').lastElementChild.querySelector('input').focus();};
+  $('vsExample').onclick=()=>{vs30Draw([{d:5,vs:150,source:'教學假設，非實際工址'},{d:10,vs:200,source:'教學假設，非實際工址'},{d:15,vs:300,source:'教學假設，非實際工址'}]);$('soilMethod').value='layers';$('vsDetails').open=true;update();};
+  $('soilMethod').addEventListener('change',()=>{if($('soilMethod').value==='layers')$('vsDetails').open=true;});
+}
+
 const opts=arr=>arr.map((x,i)=>`<option value="${i}">${esc(x)}</option>`).join('');
 $('directionInputs').innerHTML=['x','y'].map(a=>`<h3>${a.toUpperCase()} 向</h3><label>經驗週期類別<select id="ct${a}"><option value="0.07">RC／SRC 剛構架、鋼偏心斜撐 · 0.070</option><option value="0.085">鋼剛構架（無剛性牆／加勁）· 0.085</option><option value="0.05">其他／含剪力牆或加勁 · 0.050</option></select></label><div class="grid2"><label>分析週期 T${a}（s）<input id="t${a}" type="number" value="0.56" min="0.001" step="0.01"></label><label>韌性容量 R${a}<input id="r${a}" type="number" value="4" min="1" max="5" step="0.1"></label></div>`).join('')+'<p class="hint">R 預設 4 為示範；須由表 1-3 依實際結構系統選定。經驗週期係數與 R 分別確認。</p>';
 function floorUI(){ $('floorInputs').innerHTML=floors.map((f,i)=>`<tr><td>${i+1}F${i===floors.length-1?' / 屋頂':''}</td><td><input aria-label="${i+1}樓標高" data-floor="${i}" data-key="h" type="number" min="0.01" step="0.1" value="${f.h}"></td><td><input aria-label="${i+1}樓重量" data-floor="${i}" data-key="w" type="number" min="0.01" step="10" value="${f.w}"></td><td><button data-remove-floor="${i}" ${floors.length===1?'disabled':''}>移除</button></td></tr>`).join('');}
@@ -17,7 +76,7 @@ $('city').addEventListener('change',cityChange);$('district').addEventListener('
 $('applyLocation').onclick=()=>{let r=locations[Number($('village').value)];if(!r||!eligibleLocations().includes(r)||$('village').value==='')return;if(r.mode==='basin')$('zone').value=r.zone;else r.raw.forEach((v,i)=>$('s'+i).value=v);$('locationNote').textContent=[r.city,r.district,r.village].join(' ')+(r.near?'｜鄰近：'+r.near+'；請加入所有適用斷層並量測距離。':'')+(r.city==='臺北市'||r.city==='新北市'?'｜113 年修正表':'｜附件震區表');modeUI();update();};
 function modeUI(){let mode=$('mode').value;$('generalInputs').hidden=mode==='basin';$('basinInputs').hidden=mode!=='basin';$('nearInputs').hidden=mode!=='near';}
 $('mode').addEventListener('change',()=>{$('locationNote').textContent='已手動切換工址類型，請重新確認基地與參數。';refreshLocations();modeUI();});
-function read(){const n=id=>$(id).value.trim()===''?NaN:Number($(id).value);return {mode:$('mode').value,fumBasis:$('fumBasis').value,zone:n('zone'),soil:n('soil'),raw:[0,1,2,3].map(i=>n('s'+i)),height:n('height'),I:n('I'),ay:n('ay'),tx:n('tx'),ty:n('ty'),ctx:n('ctx'),cty:n('cty'),rx:n('rx'),ry:n('ry'),tv:n('tv'),rv:n('rv'),depth:n('depth'),bw:n('bw'),floors,irregular:$('irregular').value,mixed:$('mixed').value,special:$('special').value};}
+function read(){const vs30=vs30Sync();const n=id=>$(id).value.trim()===''?NaN:Number($(id).value);return {vs30,mode:$('mode').value,fumBasis:$('fumBasis').value,zone:n('zone'),soil:n('soil'),raw:[0,1,2,3].map(i=>n('s'+i)),height:n('height'),I:n('I'),ay:n('ay'),tx:n('tx'),ty:n('ty'),ctx:n('ctx'),cty:n('cty'),rx:n('rx'),ry:n('ry'),tv:n('tv'),rv:n('rv'),depth:n('depth'),bw:n('bw'),floors,irregular:$('irregular').value,mixed:$('mixed').value,special:$('special').value};}
 const table=(heads,rows)=>`<div class="tablewrap"><table><thead><tr>${heads.map(s=>`<th>${s}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${row.map(x=>`<td>${x}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
 function metric(label,d){return `<div class="metric"><div class="eyebrow">${label}</div><strong>${fmt(d.V,2)}<small>tf</small></strong><p class="coef">C = V/W = ${fmt(d.C)}</p><p>${d.control}<br>T = ${fmt(d.t,3)} s</p></div>`;}
 function update(){document.querySelectorAll('#steps details').forEach(el=>{if(el.open)openSteps.add(el.dataset.step);else openSteps.delete(el.dataset.step);});try{let p=read();if(!Number.isFinite(p.depth)||p.depth<0||!Number.isFinite(p.bw)||p.bw<=0)throw Error('地下室深度須 ≥0，該層重量須 >0。');if(p.rv>3)throw Error('本工具垂直韌性 Rv 限 1–3；其他取值須專案評估。');if(p.rx>5||p.ry>5)throw Error('R 超出本工具支援範圍 1–5，請確認表 1-3。');const r=Engine.calculate(p,faults.map(f=>({...DATA.faults[f.index],distance:f.distance})));params=p;current=r;$('calcState').textContent='已更新';$('calcState').className='ready';
@@ -34,6 +93,7 @@ svg+='<text x="56" y="20" fill="#536d84" font-size="13">Sa（g/g）</text><text 
 [r.x,r.y].forEach((d,i)=>{svg+=`<line x1="${x(d.t)}" x2="${x(d.t)}" y1="35" y2="285" stroke="${i?'#5f7b87':'#132942'}" stroke-dasharray="5 5"/><text x="${x(d.t)+7}" y="${48+i*18}" font-size="12" fill="#18324a">${i?'Y':'X'} ${fmt(d.t,3)}s</text>`;});$('chart').innerHTML=svg+'</svg>';}
 function renderFloors(){const r=current;let rows=r.dx.rows.map((f,i)=>[`${i+1}F`,fmt(f.force,2),fmt(r.dy.rows[i].force,2),fmt(f.shear,2),fmt(r.dy.rows[i].shear,2)]);$('floorResults').innerHTML=`<h3>豎向分配結果</h3><p class="hint">Fᵢ = (V − Ft) Wᵢhᵢ / ΣWⱼhⱼ；屋頂再加 Ft。T ≤0.7 s 時，本工具取 Ft = 0。</p>`+table(['樓層','Fx（tf）','Fy（tf）','Qx（tf）','Qy（tf）'],rows)+`<div class="note">ΣFx = ${fmt(r.dx.sumForce,3)} tf　／　ΣFy = ${fmt(r.dy.sumForce,3)} tf<br>頂層集中力 Ftx = ${fmt(r.dx.ft,3)} tf、Fty = ${fmt(r.dy.ft,3)} tf<br>基面力矩 ΣFh（未折減、含 Ft）：X ${fmt(r.dx.moment,2)}、Y ${fmt(r.dy.moment,2)} tf·m</div>`;}
 function renderSteps(){let r=current,p=params;const step=(n,title,html)=>`<details class="step" ${openSteps.has(n)?'open':''} data-step="${n}"><summary><span>${n}</span> ${title}</summary><div class="step-content">${html}</div></details>`;let h=step('01','輸入摘要',`<p>${esc($('locationNote').textContent)}<br>工址：${esc($('mode').selectedOptions[0].text)}；FuM 依據：${p.fumBasis==='source'?'附件 T₀M':'規範式 (2-12) T₀D'}；I=${p.I}；αy=${p.ay}；Hn=${p.height} m；W=${fmt(r.W,2)} tf。</p>`);
+h+=step('01a','Vs30 與地盤分類 · §2.5',vs30Report(p.vs30));
 if(r.nearRows.length)h+=step('02','近斷層查表內插',table(['斷層','km','Sˢᴰ','S¹ᴰ','Sˢᴹ','S¹ᴹ'],r.nearRows.map(f=>[esc(f.name),fmt(f.distance,2),...f.computed.map(n=>fmt(n))]))+'<p>各震區參數分別取最大值（含一般區域係數下限），再依地盤求 Fa、Fv。</p>');
 h+=step('03','工址放大與轉換週期 · §2.5–2.7',`<div class="formula">SDS = Fa × Sˢᴰ = ${fmt(r.s)}<br>SD1 = Fv × S¹ᴰ = ${fmt(r.s1)}<br>SMS = Fa × Sˢᴹ = ${fmt(r.m)}<br>SM1 = Fv × S¹ᴹ = ${fmt(r.m1)}<br>T₀D = ${fmt(r.t0)} s；T₀M = ${fmt(r.tm)} s</div><p>臺北盆地直接採表 2-6(c)。其餘依表 2-4 線性內插。</p>`);
 h+=step('04','週期限制與韌性折減 · §2.6、2.9',`<div class="formula">Tc = Ct × Hn^0.75；T = min(T分析, 1.4Tc)<br>Ra = 1 + (R − 1) / ${p.mode==='basin'?'2.0':'1.5'}<br>q = √(2Ra − 1)<br>Fu：T ≤ 0.2T₀ → 1 + (q−1)T/(0.2T₀)<br>0.2T₀ &lt; T ≤ 0.6T₀ → q<br>0.6T₀ &lt; T ≤ T₀ → q + (Ra−q)(T−0.6T₀)/(0.4T₀)<br>T &gt; T₀ → Ra</div>`+table(['項目','X 向','Y 向'],[['Ct',p.ctx,p.cty],['分析週期（s）',fmt(p.tx),fmt(p.ty)],['Tc（s）',fmt(r.x.Tc),fmt(r.y.Tc)],['1.4Tc（s）',fmt(1.4*r.x.Tc),fmt(1.4*r.y.Tc)],['採用 T（s）',fmt(r.x.t),fmt(r.y.t)],['R',p.rx,p.ry],['Ra',fmt(r.x.ra),fmt(r.y.ra)],['Fu',fmt(r.x.fd),fmt(r.y.fd)],[p.fumBasis==='source'?'FuM（附件 T₀M）':'FuM（式 2-12 T₀D）',fmt(r.x.fm),fmt(r.y.fm)]]));
@@ -51,7 +111,8 @@ $('faultRows').addEventListener('change',e=>{const i=e.target.dataset.fault;if(i
 $('faultRows').addEventListener('input',e=>{if(e.target.dataset.key!=='distance')return;faults[+e.target.dataset.fault].distance=e.target.value===''?NaN:+e.target.value;update();});
 $('faultRows').addEventListener('click',e=>{const i=e.target.dataset.removeFault;if(i===undefined)return;faults.splice(+i,1);faultUI();update();});
 $('height').addEventListener('input',()=>{const h=Number($('height').value);if(h>0&&Number.isFinite(h)){let old=floors.at(-1).h;if(old>0)floors=floors.map(f=>({...f,h:Math.round(f.h*h/old*1000)/1000}));floorUI();}});
-document.querySelectorAll('aside input,aside select').forEach(el=>{if(['city','district','village'].includes(el.id))return;el.addEventListener('input',update);el.addEventListener('change',update);});
+vs30Init();
+document.querySelectorAll('aside input,aside select').forEach(el=>{if(el.closest('#vsRows')||['city','district','village'].includes(el.id))return;el.addEventListener('input',update);el.addEventListener('change',update);});
 function resultTab(b){document.querySelectorAll('[data-tab]').forEach(x=>{x.classList.toggle('active',x===b);x.setAttribute('aria-selected',String(x===b));x.tabIndex=x===b?0:-1;});document.querySelectorAll('.tab').forEach(s=>s.hidden=s.id!==b.dataset.tab);}
 document.querySelectorAll('[data-tab]').forEach(b=>{b.id='result-tab-'+b.dataset.tab;b.setAttribute('role','tab');b.setAttribute('aria-controls',b.dataset.tab);b.setAttribute('aria-selected',String(b.classList.contains('active')));b.tabIndex=b.classList.contains('active')?0:-1;$(b.dataset.tab).setAttribute('role','tabpanel');$(b.dataset.tab).setAttribute('aria-labelledby',b.id);b.onclick=()=>resultTab(b);});
 function inputTab(b){document.querySelectorAll('[data-input-tab]').forEach(x=>{let active=x===b;x.classList.toggle('active',active);x.setAttribute('aria-selected',String(active));x.tabIndex=active?0:-1;$('input-'+x.dataset.inputTab).hidden=!active;});document.querySelector('.input-scroll').scrollTop=0;}
@@ -63,3 +124,4 @@ let printOpen=[];window.addEventListener('beforeprint',()=>{printOpen=[...docume
 
 $('chartType').onchange=renderChart;$('print').onclick=()=>{if(current)window.print();};floorUI();faultUI();modeUI();update();
 if(document.modelContext?.registerTool){try{Promise.resolve(document.modelContext.registerTool({name:'read_seismic_calculation',description:'讀取本頁目前地震力參數與計算結果；不代表結構安全檢核。',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true},execute(input){if(!input||Object.keys(input).length)throw Error('不接受額外參數');if(!current)throw Error('輸入未完成');return {parameters:params,W:current.W,x:current.x,y:current.y,z:current.z,dynamicRequired:current.dynamic};}})).catch(()=>{});}catch(e){}}
+
