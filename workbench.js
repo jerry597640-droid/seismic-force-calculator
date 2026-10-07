@@ -16,3 +16,4 @@ document.addEventListener('seismic-updated',summary);summary();
 })();
 // Help is embedded in both online and single-file offline editions.
 document.addEventListener('click',event=>{const trigger=event.target.closest('[data-guide]');if(!trigger)return;const dialog=document.getElementById('guideDialog'),frame=document.getElementById('guideFrame');dialog.showModal();const jump=()=>frame.contentDocument?.getElementById(trigger.dataset.guide)?.scrollIntoView({behavior:'instant',block:'start'});if(frame.contentDocument?.readyState==='complete')jump();else frame.addEventListener('load',jump,{once:true});});
+
