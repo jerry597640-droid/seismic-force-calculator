@@ -29,6 +29,7 @@
     ensureSource();
     if (!dialog.open) dialog.showModal();
     document.getElementById('tutorialClose').focus();
+    dialog.scrollTop=0;
   }
   document.addEventListener('click', e => {
     if (e.target.closest('[data-open-tutorial]')) { e.preventDefault(); openTutorial(); }
@@ -47,7 +48,7 @@
     chapterButtons.forEach((b,i)=>b.setAttribute('aria-current',String(i===active)));
   });
   let pendingSeek = null;
-  const seek = seconds => {video.currentTime=Math.min(seconds,Math.max(0,video.duration-.1));video.play().catch(()=>setStatus('已移到章節，請按影片播放鍵開始。'));};
+  const seek = seconds => {dialog.scrollTo({top:0,behavior:'smooth'});video.currentTime=Math.min(seconds,Math.max(0,video.duration-.1));video.play().catch(()=>setStatus('已移到章節，請按影片播放鍵開始。'));};
   chapterButtons.forEach((button,i)=>button.addEventListener('click',()=>{
     ensureSource();
     pendingSeek=data.chapters[i].start;

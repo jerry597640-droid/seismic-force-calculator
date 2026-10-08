@@ -6,6 +6,8 @@ function spectrum(t,s,s1,floor=true,trace){let t0=s1/s;const branch=t<=.2*t0?'ri
 function fu(t,r,t0,trace){let q=Math.sqrt(2*r-1);const branch=t<=.2*t0?'initial':t<=.6*t0?'sqrt':t<=t0?'transition':'R',value=t<=.2*t0?1+(q-1)*t/(.2*t0):t<=.6*t0?q:t<=t0?q+(r-q)*(t-.6*t0)/(.4*t0):r;trace?.push({kind:'fu',t,r,t0,q,branch,value});return value;}
 function modify(q,vertical=false,near=false,trace){let a=vertical?(near?.2:.15):.3,b=vertical?(near?.53:.4):.8,c=vertical?(near?.096:.072):.144;const branch=q<=a?'identity':q<b?'middle':'upper',value=q<=a?q:q<b?.52*q+c:.7*q;trace?.push({kind:'modify',q,vertical,near,a,b,c,branch,value});return value;}
 function calculate(p,faults=[]){
+// §2.10.2 replaces Ra with R in (2-12); the transition period remains T0D.
+p={...p,fumBasis:'code'};
 if(!['general','basin','near'].includes(p.mode))throw Error('工址類型無效。');
 if(![1,2,3].includes(p.soil))throw Error('地盤類別須為 1–3。');
 if(p.mode==='basin'&&![1.6,1.3,1.05].includes(p.zone))throw Error('臺北微分區轉換週期無效。');
@@ -20,11 +22,11 @@ let raw=[...p.raw],nearRows=[];
 if(near){if(!faults.length)throw Error('近斷層工址請加入至少一條適用斷層，並輸入最短水平距離。');for(const f of faults){if(!Number.isFinite(f.distance)||f.distance<0)throw Error('斷層距離不可空白或小於零。');const interpolation=[];let values=f.values.map(v=>lerp(f.distance,[1,3,5,7,9,11,13,14],v,interpolation));const rawBefore=[...raw];raw=raw.map((v,i)=>Math.max(v,values[i]));nearRows.push({...f,computed:values,trace:{interpolation,rawBefore,rawAfter:[...raw]}});}}
 const site=near?amplify(raw,p.soil):base;const [s,s1,m,m1]=site.values,t0=s1/s,tm=m1/m,W=p.floors.reduce((a,f)=>a+f.w,0),div=basin?3.5:4.2;
 function direction(T,R,ct,vertical=false){const Tc=ct*p.height**.75,t=vertical?T:Math.min(T,1.4*Tc),ra=1+(R-1)/(basin?2:1.5),k=vertical?(near?2/3:.5):1,trace={fd:[],fm:[],sd:[],sm:[],md:[],mm:[],fs:[],ss:[],ms:[],driftFu:[],driftSa:[],driftModify:[]};
-let fd=fu(t,ra,t0,trace.fd),fm=fu(t,R,p.fumBasis==='source'?tm:t0,trace.fm),sd=k*spectrum(t,s,s1,true,trace.sd),sm=k*spectrum(t,m,m1,true,trace.sm),md=modify(sd/fd,vertical,near,trace.md),mm=modify(sm/fm,vertical,near,trace.mm);
+let fd=fu(t,ra,t0,trace.fd),fm=fu(t,R,t0,trace.fm),sd=k*spectrum(t,s,s1,true,trace.sd),sm=k*spectrum(t,m,m1,true,trace.sm),md=modify(sd/fd,vertical,near,trace.md),mm=modify(sm/fm,vertical,near,trace.mm);
 let smallS=near?base.values:site.values,fs=fu(t,ra,smallS[1]/smallS[0],trace.fs),ss=k*spectrum(t,smallS[0],smallS[1],true,trace.ss),ms=modify(ss/fs,vertical,near,trace.ms);
 let cd=p.I/(1.4*p.ay)*md,cs=p.I*fs/(div*p.ay)*ms,cm=p.I/(1.4*p.ay)*mm,C=Math.max(cd,cs,cm),control=C===cd?'設計地震 Vd':C===cs?'中小度地震 V*':'最大考量地震 VM';
 let driftFu=fu(T,ra,t0,trace.driftFu),driftSa=spectrum(T,s,s1,false,trace.driftSa),driftC=driftFu*modify(driftSa/driftFu,false,false,trace.driftModify)/4.2;
-return {T,Tc,t,R,ra,fd,fm,sd,sm,md,mm,fs,ss,ms,cd,cs,cm,C,V:C*W,control,driftC,driftV:driftC*W,trace:{...trace,k,smallS:[...smallS],vertical,ct,periodUpper:1.4*Tc,fumBasis:p.fumBasis==='source'?'T0M':'T0D',driftFuValue:driftFu,driftSaValue:driftSa}};}
+return {T,Tc,t,R,ra,fd,fm,sd,sm,md,mm,fs,ss,ms,cd,cs,cm,C,V:C*W,control,driftC,driftV:driftC*W,trace:{...trace,k,smallS:[...smallS],vertical,ct,periodUpper:1.4*Tc,fumBasis:'T0D',driftFuValue:driftFu,driftSaValue:driftSa}};}
 const x=direction(p.tx,p.rx,p.ctx),y=direction(p.ty,p.ry,p.cty),z=direction(p.tv,p.rv,0,true);
 let basement=null;if(Number.isFinite(p.depth)&&Number.isFinite(p.bw)){const depthFactor=Math.max(1-p.depth/40,.5),kb=.1*depthFactor*p.I,kd=kb*s,ks=kd/div,km=kb*m;basement={depthFactor,kb,kd,ks,km,design:kd*p.bw,small:ks*p.bw,maximum:km*p.bw};}
 function distribute(d){let ft=d.t<=.7?0:Math.min(.07*d.t,.25)*d.V,sum=p.floors.reduce((a,f)=>a+f.w*f.h,0);let rows=p.floors.map((f,i)=>{const numerator=(d.V-ft)*f.w*f.h,baseForce=numerator/sum,roofExtra=i===p.floors.length-1?ft:0;return {...f,force:baseForce+roofExtra,trace:{weightHeight:f.w*f.h,numerator,baseForce,roofExtra}}});let q=0;for(let i=rows.length-1;i>=0;i--){q+=rows[i].force;rows[i].shear=q;}return {ft,rows,sumForce:q,moment:rows.reduce((a,f)=>a+f.force*f.h,0),trace:{denominator:sum,remaining:d.V-ft,ftCoefficient:d.t<=.7?0:Math.min(.07*d.t,.25)}};}
@@ -32,3 +34,4 @@ return {base,site,nearRows,W,s,s1,m,m1,t0,tm,x,y,z,dx:distribute(x),dy:distribut
 }
 return {lerp,amplify,spectrum,fu,modify,calculate};})();
 if(typeof module!=='undefined')module.exports=Engine;
+
