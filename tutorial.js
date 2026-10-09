@@ -3,14 +3,14 @@
   const data = window.SEISMIC_TUTORIAL;
   if (!data || document.getElementById('tutorialDialog')) return;
   const base = 'https://jerry597640-droid.github.io/seismic-force-calculator/';
-  const filename = 'seismic-tutorial-20261008.mp4';
+  const filename = data.filename || 'seismic-shortterm-20261009.mp4';
   const isLocal = location.protocol === 'file:';
   const stamp = seconds => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2,'0')}`;
   const escape = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const dialog = document.createElement('dialog');
   dialog.id = 'tutorialDialog';
   dialog.setAttribute('aria-labelledby','tutorialTitle');
-  dialog.innerHTML = `<div class="tutorial-head"><div><h2 id="tutorialTitle">操作影片｜地震力分析工作台</h2><p>4 分 48 秒 · 中文旁白與字幕 · 11 個章節</p></div><button type="button" id="tutorialClose" aria-label="關閉操作影片">關閉</button></div><div class="tutorial-body"><video id="tutorialVideo" controls playsinline preload="none" aria-label="地震力分析工作台操作教學影片"></video><div class="tutorial-controls"><label>播放速度<select id="tutorialSpeed" aria-label="影片播放速度"><option value="0.75">0.75 倍</option><option value="1" selected>正常</option><option value="1.25">1.25 倍</option><option value="1.5">1.5 倍</option><option value="2">2 倍</option></select></label><a href="${base}media/${filename}" download="${filename}">下載影片 MP4</a><button type="button" id="tutorialChoose">選取本機影片</button><input type="file" accept="video/mp4,video/*" id="tutorialLocalFile" hidden></div><p id="tutorialStatus" class="tutorial-status" role="status" aria-live="polite"></p><p class="tutorial-note">本片使用假設數值：Vs30＝225 m/s、第二類地盤，X／Y 向總橫力各 345.76 tf；與操作手冊 A 例的第一類地盤不同。實際個案請依地勘、結構模型及設備資料輸入。</p><h3>章節｜點選跳到該步驟</h3><nav class="tutorial-chapters" aria-label="操作影片章節">${data.chapters.map((c,i)=>`<button type="button" data-tutorial-chapter="${i}"><span>${stamp(c.start)}</span>${escape(c.title)}</button>`).join('')}</nav><p class="tutorial-note">離線觀看：分別下載離線版 HTML 與 MP4，將兩檔放在同一資料夾，或按「選取本機影片」。本機檔案只在瀏覽器播放，不會上傳。手機可使用影片內建全螢幕控制；橫向觀看較清楚。</p><details class="tutorial-transcript"><summary>閱讀影片文字稿</summary>${data.chapters.map(c=>`<h3>${stamp(c.start)} ${escape(c.title)}</h3><p>${escape(c.text)}</p>`).join('')}</details></div>`;
+  dialog.innerHTML = `<div class="tutorial-head"><div><h2 id="tutorialTitle">進版影片｜短期地震力與回歸期</h2><p>${Math.floor(data.duration/60)} 分 ${Math.round(data.duration%60)} 秒 · 中文旁白與字幕 · ${data.chapters.length} 個章節 · ${escape(data.version)}</p></div><button type="button" id="tutorialClose" aria-label="關閉操作影片">關閉</button></div><div class="tutorial-body"><video id="tutorialVideo" controls playsinline preload="none" aria-label="地震力分析工作台操作教學影片"></video><div class="tutorial-controls"><label>播放速度<select id="tutorialSpeed" aria-label="影片播放速度"><option value="0.75">0.75 倍</option><option value="1" selected>正常</option><option value="1.25">1.25 倍</option><option value="1.5">1.5 倍</option><option value="2">2 倍</option></select></label><a href="${base}media/${filename}" download="${filename}">下載影片 MP4</a><button type="button" id="tutorialChoose">選取本機影片</button><input type="file" accept="video/mp4,video/*" id="tutorialLocalFile" hidden></div><p id="tutorialStatus" class="tutorial-status" role="status" aria-live="polite"></p><p class="tutorial-note">本片示範 6 個月 → 回歸期 4.7456 年；採 5 年回歸期時，期間內超越機率 9.516%。Ch＝0.12、Cv＝0.06 為教學假設，不是規範表值。</p><p class="tutorial-note"><a href="${base}media/seismic-tutorial-20261008.mp4" target="_blank" rel="noopener">觀看前版完整基礎操作（4 分 48 秒）</a>：工址、Vs30、主建築、設備與詳細計算。</p><h3>章節｜點選跳到該步驟</h3><nav class="tutorial-chapters" aria-label="操作影片章節">${data.chapters.map((c,i)=>`<button type="button" data-tutorial-chapter="${i}"><span>${stamp(c.start)}</span>${escape(c.title)}</button>`).join('')}</nav><p class="tutorial-note">離線觀看：分別下載離線版 HTML 與 MP4，將兩檔放在同一資料夾，或按「選取本機影片」。本機檔案只在瀏覽器播放，不會上傳。手機可使用影片內建全螢幕控制；橫向觀看較清楚。</p><details class="tutorial-transcript"><summary>閱讀影片文字稿</summary>${data.chapters.map(c=>`<h3>${stamp(c.start)} ${escape(c.title)}</h3><p>${escape(c.text)}</p>`).join('')}</details></div>`;
   document.body.appendChild(dialog);
   const video = document.getElementById('tutorialVideo');
   const status = document.getElementById('tutorialStatus');
@@ -19,7 +19,7 @@
   function setStatus(text) { status.textContent = text; }
   function ensureSource() {
     if (sourceReady) return;
-    video.poster = isLocal ? '' : base + 'media/seismic-tutorial-poster.jpg';
+    video.poster = isLocal ? '' : base + 'media/seismic-shortterm-poster.jpg';
     video.src = isLocal ? filename : base + 'media/' + filename;
     sourceReady = true;
     if (isLocal) setStatus('請播放同資料夾內的影片；若找不到，按「選取本機影片」。');
