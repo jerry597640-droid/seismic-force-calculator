@@ -2,14 +2,19 @@
 (()=>{
 const mobile=window.matchMedia('(max-width: 800px)');
 const body=document.body;
-function show(view){body.dataset.mobileView=view;document.querySelectorAll('[data-mobile]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.mobile===view)));if(view==='components'||view==='details'||view==='shortterm')document.querySelector(`[data-tab="${view}"]`).click();if((view==='results'||view==='parameters')&&(!$('components').hidden||!$('shortterm').hidden))document.querySelector('[data-tab="spectrum"]').click();if(mobile.matches)window.scrollTo({top:0,behavior:'instant'});}
+function show(view){
+ if(['components','details','shortterm'].includes(view))document.querySelector(`[data-tab="${view}"]`).click();
+ else if((view==='results'||view==='parameters')&&(!$('components').hidden||!$('shortterm').hidden))document.querySelector('[data-tab="spectrum"]').click();
+ body.dataset.mobileView=view;document.querySelectorAll('[data-mobile]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.mobile===view)));
+ if(mobile.matches)window.scrollTo({top:0,behavior:'instant'});
+}
 document.querySelectorAll('[data-mobile]').forEach(b=>b.onclick=()=>show(b.dataset.mobile));
 $('focusInput').onclick=()=>{const collapse=body.classList.toggle('parameters-collapsed');$('focusInput').setAttribute('aria-pressed',String(collapse));$('focusInput').textContent=collapse?'展開參數':'收合參數';};
 $('moduleBuilding').onclick=()=>{show('results');document.querySelector('[data-tab="spectrum"]').click();};
 $('moduleComponent').onclick=()=>show('components');
 $('moduleShortTerm').onclick=()=>show('shortterm');
 $('openVerification').onclick=()=>{show('results');document.querySelector('[data-tab="basis"]').click();};
-document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>{const isComponent=b.dataset.tab==='components',isShort=b.dataset.tab==='shortterm';body.classList.toggle('shortterm-active',isShort);$('activeViewName').textContent=b.textContent;['moduleBuilding','moduleComponent','moduleShortTerm'].forEach((id,i)=>{const active=i===(isShort?2:Number(isComponent));$(id).classList.toggle('active',active);$(id).setAttribute('aria-pressed',String(active));});if(mobile.matches){const view=isShort?'shortterm':isComponent?'components':b.dataset.tab==='details'?'details':'results';body.dataset.mobileView=view;document.querySelectorAll('[data-mobile]').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.mobile===view)));}}));
+document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>{const isComponent=b.dataset.tab==='components',isShort=b.dataset.tab==='shortterm';body.classList.toggle('shortterm-active',isShort);if(isShort){$('appState').textContent='短期回歸期 · 期間內超越機率 10%';$('appState').classList.remove('invalid');}else summary();$('activeViewName').textContent=b.textContent;['moduleBuilding','moduleComponent','moduleShortTerm'].forEach((id,i)=>{const active=i===(isShort?2:Number(isComponent));$(id).classList.toggle('active',active);$(id).setAttribute('aria-pressed',String(active));});if(mobile.matches){const view=isShort?'shortterm':isComponent?'components':b.dataset.tab==='details'?'details':'results';body.dataset.mobileView=view;document.querySelectorAll('[data-mobile]').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.mobile===view)));}}));
 $('editWeights').addEventListener('click',()=>{body.dataset.mobileView='results';document.querySelectorAll('[data-mobile]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.mobile==='results')));});
 document.querySelectorAll('a[href="#resultPanel"]').forEach(a=>a.addEventListener('click',e=>{e.preventDefault();show('results');}));
 function summary(){const valid=!!current;$('appState').textContent=valid?'計算已更新 · '+$('mode').selectedOptions[0].text:'輸入待修正 · 請查看提示';$('appState').classList.toggle('invalid',!valid);$('verticalSummary').innerHTML=valid?`<span>主建築垂直係數</span><b>梁版 Kz = ±${fmt(current.z.C)}</b><span>柱牆 = ±${fmt(current.columnC)}</span><small>各乘對應自重</small>`:'';document.querySelectorAll('input[type="number"]').forEach(el=>el.setAttribute('inputmode','decimal'));}
